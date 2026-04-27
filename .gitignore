@@ -1,0 +1,15 @@
+# IDEs / editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
