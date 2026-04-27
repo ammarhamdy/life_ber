@@ -1,6 +1,7 @@
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
-
+load_dotenv()
 BASE_DIR = Path(__file__).parent.parent
-
-BASE_URL = "http://192.168.1.53:8000"
+BASE_URL=os.getenv("BASE_URL")
