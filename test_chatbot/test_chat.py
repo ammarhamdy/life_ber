@@ -41,11 +41,10 @@ class TalkerClient(AssistantClient):
 
 async def start() -> None:
     async with TalkerClient() as client:
-        # print(await client.chat("------------"))
-        # return
         questions = extract_questions(DATA_DIR_PATH / "chatbot_questions.json")
-        async for result in client.chats(questions):
-            pprint.pprint(result)
+        with open(DATA_DIR_PATH / "chats.txt", 'w') as file:
+            async for result in client.chats(questions):
+                pprint.pprint(result, stream=file)
 
 
 if __name__ == "__main__":
