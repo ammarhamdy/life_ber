@@ -2,13 +2,14 @@ import asyncio
 import pprint
 import time
 from typing import Iterable, Any, AsyncGenerator
-
-import httpx
-
 from clients.http_client import AssistantClient
-from clients.utils import get_message
+from clients.utils import get_message, format_chat
 from config.settings import BASE_URL
 from infrastructure.loaders.json_loader import extract_questions, DATA_DIR_PATH
+
+
+class StopKeyFound(Exception):
+    """Raised when the response contains the stop key — not retryable."""
 
 
 class RateLimiter:
@@ -17,21 +18,24 @@ class RateLimiter:
     def __init__(self, min_interval: float) -> None:
         self._min_interval = min_interval
         self._last_called: float = 0.0
+        self._lock = asyncio.Lock()
 
     async def acquire(self) -> None:
-        elapsed = time.monotonic() - self._last_called
-        wait = self._min_interval - elapsed
-        if wait > 0:
-            await asyncio.sleep(wait)
-        self._last_called = time.monotonic()
+        async with self._lock:
+            elapsed = time.monotonic() - self._last_called
+            wait = self._min_interval - elapsed
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_called = time.monotonic()
 
 
 class TalkerClient(AssistantClient):
 
     _ROUTE = "website.home"
-    _MIN_INTERVAL: float = 1.5
+    _MIN_INTERVAL: float = 25
     _MAX_RETRIES: int = 4
-    _BACKOFF_BASE: float = 2.0
+    _BACKOFF_BASE: float = 3.0
+    _KEY_STOPPER = "تعذر الاتصال"
 
     def __init__(self) -> None:
         super().__init__(BASE_URL)
@@ -51,14 +55,17 @@ class TalkerClient(AssistantClient):
                     route_name=self._ROUTE,
                     history=self._build_history(message),
                 )
-                return {
-                    "client": message,
-                    "chat":   get_message(result),
-                }
-            except httpx.HTTPStatusError:
+                answer = get_message(result)
+                if answer and self._KEY_STOPPER in answer:
+                    raise StopKeyFound(f"Stop key found in response for: {message!r}")
+                return {"client": message, "chat": answer}
+
+            except Exception:
+                print(f"attempt: {attempt}")
                 if attempt == self._MAX_RETRIES - 1:
-                    raise
-                backoff = self._BACKOFF_BASE ** attempt     # 2s → 4s → 8s → 16s
+                    break
+                    # raise
+                backoff = self._BACKOFF_BASE ** attempt
                 await asyncio.sleep(backoff)
         return None
 
@@ -77,8 +84,9 @@ async def start() -> None:
         questions = extract_questions(DATA_DIR_PATH / "chatbot_questions.json")
         with open(DATA_DIR_PATH / "chats.txt", "w") as file:
             async for result in client.chats(questions):
-                pprint.pprint(result)
-                pprint.pprint(result, stream=file)
+                if result:
+                    print(format_chat(result))
+                    pprint.pprint(format_chat(result), stream=file)
 
 
 if __name__ == "__main__":

@@ -36,3 +36,10 @@ def get_message(res: dict) -> str | None:
         return message.strip()
 
     return None
+
+
+def format_chat(chat: dict[str, str | None]) -> str:
+    return (
+        f"Client:\n{chat['client']}\n\n"
+        f"Bot:\n{chat['chat']}\n"
+    )
