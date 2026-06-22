@@ -2,13 +2,14 @@ import json
 import urllib.parse
 from typing import Any
 import httpx
-from assistant.headers import random_headers
+from assistant.headers import random_headers, default_headers
+from assistant.http_logging import HTTPDebugger
 from assistant.utils import get_message, extract_csrf_from_html
 from config.settings import BASE_URL
+from config.logger import logger
 
 
 class AssistantClient:
-
     url = "/jood/chat"
 
     def __init__(
@@ -26,13 +27,17 @@ class AssistantClient:
         self._csrf_token: str | None = None
 
     async def __aenter__(self) -> "AssistantClient":
+        debugger = HTTPDebugger()
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             headers=self._build_base_headers(),
             verify=self.verify_ssl,
             timeout=self.timeout,
             follow_redirects=True,
-            event_hooks={"request": [self._log_request]} if self.debug else {},
+            event_hooks={
+                "request": [debugger.log_request] if self.debug else [],
+                "response": [debugger.log_response] if self.debug else [],
+            } # httpx lifecycle hooks for debugging requests and responses (enabled only in debug mode)
         )
         await self._init_session()
         return self
@@ -42,39 +47,18 @@ class AssistantClient:
             await self._client.aclose()
             self._client = None
 
-    @staticmethod
-    async def _log_request(request: httpx.Request) -> None:
-        await request.aread()
-        print("\n" + "=" * 60)
-        print(f"[REQUEST] {request.method} {request.url}")
-        print("[HEADERS]")
-        for k, v in request.headers.items():
-            print(f"  {k}: {v}")
-        body = request.content
-        if body:
-            try:
-                print("[BODY (utf-8)]")
-                print(body.decode("utf-8")[:1000])
-            except UnicodeDecodeError:
-                print("[BODY (hex preview)]", body[:200].hex())
-        else:
-            print("[BODY] <empty>")
-        print("=" * 60 + "\n")
-
     async def _init_session(self) -> None:
         client = self._get_client()
-
         response = await client.get("/")
         response.raise_for_status()
 
         if self.debug:
-            print("\n[SESSION INIT]")
-            print("  Status         :", response.status_code)
-            print("  Cookies in jar :", dict(client.cookies))
+            logger.debug("\n[SESSION INIT]")
+            logger.debug("  Status         :%s", response.status_code)
+            logger.debug("  Cookies in jar  %s:", dict(client.cookies))
 
         # Extract CSRF from <meta name="csrf-token" content="...">
         self._csrf_token = extract_csrf_from_html(response.text)
-
         # Fallback: decode the XSRF-TOKEN cookie (Laravel accepts this as X-XSRF-TOKEN)
         if not self._csrf_token:
             raw = client.cookies.get("XSRF-TOKEN", "")
@@ -84,12 +68,17 @@ class AssistantClient:
             raise RuntimeError("Could not obtain a CSRF token from the home page.")
 
         if self.debug:
-            print("  CSRF token     :", (self._csrf_token or "")[:50], "…")
+            logger.debug("  CSRF token     :%s ...", (self._csrf_token or "")[:50])
 
         client.headers.update({
             "X-CSRF-TOKEN": self._csrf_token,
             "X-XSRF-TOKEN": urllib.parse.unquote(client.cookies.get("XSRF-TOKEN", "") or ''),
         })
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            raise RuntimeError("Use `async with AssistantClient(...) as client:`")
+        return self._client
 
     async def send_message(
             self,
@@ -107,14 +96,14 @@ class AssistantClient:
         for name, fn in strategies:
             try:
                 if self.debug:
-                    print(f"\n>>> Trying strategy: {name}")
+                    logger.debug(f"\n>>> Trying strategy: {name}")
                 result = await fn(message, route_name, history)
                 if self.debug:
-                    print(f">>> Strategy '{name}' succeeded.")
+                    logger.debug(f">>> Strategy '{name}' succeeded.")
                 return result
             except httpx.HTTPStatusError as exc:
                 if self.debug:
-                    print(
+                    logger.debug(
                         f">>> Strategy '{name}' failed "
                         f"[{exc.response.status_code}]: {exc.response.text[:300]}"
                     )
@@ -137,7 +126,7 @@ class AssistantClient:
             (name, (None, value)) for name, value in fields
         ]
         response = await client.post(
-           self.url,
+            self.url,
             files=files,
             headers={"Accept": "application/json"},
         )
@@ -185,7 +174,7 @@ class AssistantClient:
         self._raise_with_body(response)
         return response.json()  # type: ignore[no-any-return]
 
-    def _build_base_headers(self, rand=False) -> dict[str, str]:
+    def _build_base_headers(self, rand: bool = False) -> dict[str, str]:
         if rand:
             return random_headers(
                 base_url=self.base_url,
@@ -194,21 +183,7 @@ class AssistantClient:
                 accept_language="en-US,en;q=0.9"
             )
         else:
-            return {
-                "Accept": (
-                    "text/html,application/xhtml+xml,application/xml;"
-                    "q=0.9,image/avif,image/webp,*/*;q=0.8"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate",
-                "Connection": "keep-alive",
-                "Origin": self.base_url,
-                "Referer": f"{self.base_url}/",
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
-                ),
-            }
+            return default_headers(self.base_url)
 
     @staticmethod
     def _build_flat_fields(
@@ -236,11 +211,6 @@ class AssistantClient:
                 response=exc.response,
             ) from exc
 
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            raise RuntimeError("Use `async with AssistantClient(...) as client:`")
-        return self._client
-
 
 async def main() -> None:
     async with AssistantClient(
@@ -253,12 +223,10 @@ async def main() -> None:
             route_name="website.home",
             history=[{"role": "user", "content": "عامل اية النهرضا"}],
         )
-        print(
-            get_message(result)
-        )
+        logger.debug(get_message(result))
 
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
 
+    asyncio.run(main())

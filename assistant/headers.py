@@ -26,6 +26,24 @@ encodings = [
 ]
 
 
+def default_headers(base_url:  str) -> dict[str, str]:
+    return {
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;"
+                    "q=0.9,image/avif,image/webp,*/*;q=0.8"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Origin": base_url,
+                "Referer": f"{base_url}/",
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                ),
+            }
+
+
 def random_agent() -> str:
     version = random.choice(firefox_versions)
     os_part = random.choice(os_options)

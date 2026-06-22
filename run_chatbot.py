@@ -1,12 +1,30 @@
+import asyncio
+from assistant.client import AssistantClient
+from assistant.service import AssistantService
+from config.settings import BASE_URL
+from datasets.json_loader import extract_questions, DATA_DIR_PATH
+from reports.writer import write_chat_line
+from config.logger import logger
 
 
+async def main() -> None:
 
-async def main():
-    async with AssistantClient(...) as client:
+    questions = extract_questions(
+        DATA_DIR_PATH / "chatbot_questions.json"
+    )
 
-        questions = load_questions(DATASET_FILE)
+    async with AssistantClient(
+        base_url=BASE_URL,
+        verify_ssl=False,
+        debug=False,
+    ) as client:
+        service = AssistantService(client)
+        async for result in service.chats(questions):
+            if not result:
+                continue
+            write_chat_line(result)
+            logger.debug( f"[OK] {result['client']} -> {result['chat']}")
 
-        writer = ChatWriter(REPORT_FILE)
 
-        async for result in client.ask_many(questions):
-            writer.write(result)
+if __name__ == "__main__":
+    asyncio.run(main())
