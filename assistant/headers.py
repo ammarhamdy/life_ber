@@ -33,13 +33,12 @@ def random_agent() -> str:
 
 
 def random_headers(
-    base_url: str,
-    accept: str | None = None,
-    accept_encoding: str | None = None,
-    accept_language: str | None = None,
-    extra_headers: Mapping[str, str] | None = None,
+        base_url: str,
+        accept: str | None = None,
+        accept_encoding: str | None = None,
+        accept_language: str | None = None,
+        extra_headers: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-
     headers = {
         "User-Agent": random_agent(),
         "Accept": accept or random.choice(accepts),
@@ -56,4 +55,3 @@ def random_headers(
         headers.update(extra_headers)
 
     return headers
-

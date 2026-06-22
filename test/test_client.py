@@ -1,32 +1,14 @@
 import asyncio
-import pprint
-import time
 from typing import Iterable, Any, AsyncGenerator
-from clients.http_client import AssistantClient
-from clients.utils import get_message, format_chat
+from assistant.client import AssistantClient
+from assistant.limiter import RateLimiter
+from assistant.utils import get_message, format_chat
 from config.settings import BASE_URL
-from infrastructure.loaders.json_loader import extract_questions, DATA_DIR_PATH
+from datasets.json_loader import extract_questions, DATA_DIR_PATH
 
 
 class StopKeyFound(Exception):
     """Raised when the response contains the stop key — not retryable."""
-
-
-class RateLimiter:
-    """Proactive token-bucket style limiter: ensures a minimum gap between calls."""
-
-    def __init__(self, min_interval: float) -> None:
-        self._min_interval = min_interval
-        self._last_called: float = 0.0
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self._lock:
-            elapsed = time.monotonic() - self._last_called
-            wait = self._min_interval - elapsed
-            if wait > 0:
-                await asyncio.sleep(wait)
-            self._last_called = time.monotonic()
 
 
 class TalkerClient(AssistantClient):
@@ -65,7 +47,7 @@ class TalkerClient(AssistantClient):
                 if attempt == self._MAX_RETRIES - 1:
                     break
                     # raise
-                backoff = self._BACKOFF_BASE ** attempt
+                backoff = self._BACKOFF_BASE ** (attempt + 1)
                 await asyncio.sleep(backoff)
         return None
 
@@ -85,8 +67,9 @@ async def start() -> None:
         with open(DATA_DIR_PATH / "chats.txt", "w") as file:
             async for result in client.chats(questions):
                 if result:
-                    print(format_chat(result))
-                    pprint.pprint(format_chat(result), stream=file)
+                    formated_result = format_chat(result)
+                    print(formated_result)
+                    file.write(formated_result)
 
 
 if __name__ == "__main__":

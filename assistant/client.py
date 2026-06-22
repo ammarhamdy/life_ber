@@ -1,14 +1,16 @@
 import json
-import re
 import urllib.parse
 from typing import Any
 import httpx
-from clients.header_builder import random_headers
-from clients.utils import get_message
+from assistant.headers import random_headers
+from assistant.utils import get_message, extract_csrf_from_html
 from config.settings import BASE_URL
 
 
 class AssistantClient:
+
+    url = "/jood/chat"
+
     def __init__(
             self,
             base_url: str,
@@ -71,7 +73,7 @@ class AssistantClient:
             print("  Cookies in jar :", dict(client.cookies))
 
         # Extract CSRF from <meta name="csrf-token" content="...">
-        self._csrf_token = self._extract_csrf_from_html(response.text)
+        self._csrf_token = extract_csrf_from_html(response.text)
 
         # Fallback: decode the XSRF-TOKEN cookie (Laravel accepts this as X-XSRF-TOKEN)
         if not self._csrf_token:
@@ -86,22 +88,8 @@ class AssistantClient:
 
         client.headers.update({
             "X-CSRF-TOKEN": self._csrf_token,
-            "X-XSRF-TOKEN": urllib.parse.unquote(client.cookies.get("XSRF-TOKEN", "")),
+            "X-XSRF-TOKEN": urllib.parse.unquote(client.cookies.get("XSRF-TOKEN", "") or ''),
         })
-
-    @staticmethod
-    def _extract_csrf_from_html(html: str) -> str | None:
-        patterns = [
-            r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
-            r'<meta\s+content=["\']([^"\']+)["\']\s+name=["\']csrf-token["\']',
-            r'<meta\s+name=["\']_token["\']\s+content=["\']([^"\']+)["\']',
-            r'<input[^>]+name=["\']_token["\']\s+value=["\']([^"\']+)["\']',
-        ]
-        for pattern in patterns:
-            m = re.search(pattern, html, re.IGNORECASE)
-            if m:
-                return m.group(1)
-        return None
 
     async def send_message(
             self,
@@ -149,7 +137,7 @@ class AssistantClient:
             (name, (None, value)) for name, value in fields
         ]
         response = await client.post(
-            "/assistant/chat",
+           self.url,
             files=files,
             headers={"Accept": "application/json"},
         )
@@ -166,16 +154,12 @@ class AssistantClient:
         fields = self._build_flat_fields(message, route_name, history)
 
         response = await client.post(
-            "/assistant/chat",
+            AssistantClient.url,
             data=fields,  # list of tuples keeps duplicate bracket keys
             headers={"Accept": "application/json"},
         )
         self._raise_with_body(response)
         return response.json()  # type: ignore[no-any-return]
-
-    # ------------------------------------------------------------------
-    # Strategy 3 — application/json
-    # ------------------------------------------------------------------
 
     async def _post_json(
             self,
@@ -191,7 +175,7 @@ class AssistantClient:
             "_token": self._csrf_token,  # some Laravel setups need this in body too
         }
         response = await client.post(
-            "/assistant/chat",
+            AssistantClient.url,
             content=json.dumps(payload).encode(),
             headers={
                 "Accept": "application/json",
@@ -272,8 +256,6 @@ async def main() -> None:
         print(
             get_message(result)
         )
-
-
 
 
 if __name__ == "__main__":

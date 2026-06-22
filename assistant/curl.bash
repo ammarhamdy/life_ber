@@ -1,0 +1,14 @@
+curl 'http://192.168.1.78:8000/jood/chat' \
+  -X POST \
+  -H 'User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0' \
+  -H 'Accept: application/json' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Accept-Encoding: gzip, deflate' \
+  -H 'Referer: http://192.168.1.78:8000/' \
+  -H 'X-CSRF-TOKEN: xMiNAS5CGwlOOrsaTFEV2PQcOYI3FrvozcoOLijt' \
+  -H 'Origin: http://192.168.1.78:8000' \
+  -H 'Connection: keep-alive' \
+  -H 'Cookie: XSRF-TOKEN=...; gmaay_albr_web_session=...; gmaay_albr_admin_session=...' \
+  -H 'Priority: u=0' \
+  -F 'message=كيف أجيب الـ 500 نقطة الباقية؟ 🎯' \
+  -F 'session_id=3a280262-db2c-498b-aa85-5ceff997d38a'
